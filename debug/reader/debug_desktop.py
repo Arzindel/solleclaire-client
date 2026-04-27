@@ -130,9 +130,12 @@ def print_focused():
 def print_json(max_depth: int = 3):
     """Write desktop state as JSON to file."""
     output_file = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)),
-        'debug_reader_json_output.json'
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        'logs', 'reader', 'debug_reader_json_output.json'
     )
+
+    # Ensure directory exists
+    os.makedirs(os.path.dirname(output_file), exist_ok=True)
 
     json_output = capture.get_desktop_json(max_depth=max_depth)
 
