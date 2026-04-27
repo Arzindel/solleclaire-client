@@ -17,6 +17,7 @@ def get_desktop_state(max_depth: int = 3) -> dict[str, Any]:
     Returns a dictionary with:
     - desktop_name: name of the desktop
     - applications: list of running applications with their windows and elements
+    - focused_element: currently focused element
 
     Args:
         max_depth: How deep to recurse into element trees (default 3)
@@ -29,6 +30,7 @@ def get_desktop_state(max_depth: int = 3) -> dict[str, Any]:
             'role': desktop.get_role_name(),
         },
         'applications': [],
+        'focused_element': get_focused_element(),
     }
 
     # Iterate through applications
@@ -84,26 +86,28 @@ def get_focused_element() -> dict[str, Any] | None:
     Get the currently focused element.
 
     Returns:
-        Dictionary with focused element info, or None if nothing focused
+        Dictionary with focused element info, including application and window, or None if nothing focused
     """
     desktop = Atspi.get_desktop(0)
 
-    def find_focused(parent: Any, depth: int = 0, max_depth: int = 15) -> Any | None:
-        """Recursively search for element with FOCUSED state."""
+    def find_all_focused(parent: Any, app_name: str, win_name: str, depth: int = 0, max_depth: int = 15) -> list[tuple[Any, str, str, int]]:
+        """Recursively search for ALL elements with FOCUSED state."""
+        results = []
+
         if depth > max_depth:
-            return None
+            return results
 
         try:
             states = parent.get_state_set()
             if states.contains(Atspi.StateType.FOCUSED):
-                return parent
+                results.append((parent, app_name, win_name, depth))
         except Exception:
             pass
 
         try:
             child_count = parent.get_child_count()
         except Exception:
-            return None
+            return results
 
         for i in range(child_count):
             try:
@@ -114,11 +118,12 @@ def get_focused_element() -> dict[str, Any] | None:
             if not child:
                 continue
 
-            result = find_focused(child, depth + 1, max_depth)
-            if result:
-                return result
+            # Update window name if this is a frame
+            current_win_name = child.get_name() if child.get_role_name() == 'frame' else win_name
 
-        return None
+            results.extend(find_all_focused(child, app_name, current_win_name, depth + 1, max_depth))
+
+        return results
 
     # First, find the ACTIVE window
     active_window = None
@@ -135,7 +140,7 @@ def get_focused_element() -> dict[str, Any] | None:
             try:
                 states = win.get_state_set()
                 if states.contains(Atspi.StateType.ACTIVE):
-                    active_window = win
+                    active_window = (win, app.get_name())
                     break
             except Exception:
                 pass
@@ -143,28 +148,42 @@ def get_focused_element() -> dict[str, Any] | None:
         if active_window:
             break
 
+    all_focused = []
+
     # Search in ACTIVE window first
     if active_window:
-        focused = find_focused(active_window)
-        if focused:
-            return _extract_element(focused)
+        win, app_name = active_window
+        all_focused = find_all_focused(win, app_name, win.get_name())
 
-    # Fallback: search all windows
-    for i in range(desktop.get_child_count()):
-        app = desktop.get_child_at_index(i)
-        if not app:
-            continue
-
-        for j in range(app.get_child_count()):
-            win = app.get_child_at_index(j)
-            if not win:
+    # If nothing in active window, search all windows
+    if not all_focused:
+        for i in range(desktop.get_child_count()):
+            app = desktop.get_child_at_index(i)
+            if not app:
                 continue
 
-            focused = find_focused(win)
-            if focused:
-                return _extract_element(focused)
+            app_name = app.get_name()
 
-    return None
+            for j in range(app.get_child_count()):
+                win = app.get_child_at_index(j)
+                if not win:
+                    continue
+
+                results = find_all_focused(win, app_name, win.get_name())
+                all_focused.extend(results)
+
+    if not all_focused:
+        return None
+
+    # Sort by depth (deepest first) and return the most specific one
+    all_focused.sort(key=lambda x: x[3], reverse=True)
+    elem, app_nm, win_nm, depth = all_focused[0]
+
+    elem_info = _extract_element(elem)
+    elem_info['application'] = app_nm
+    elem_info['window'] = win_nm
+
+    return elem_info
 
 
 # --- Private helpers ---

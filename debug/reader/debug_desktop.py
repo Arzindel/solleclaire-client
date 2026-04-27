@@ -120,16 +120,27 @@ def print_focused():
             active_states = [k for k, v in states.items() if v]
             if active_states:
                 print(f"States: {', '.join(active_states)}")
+
+        print(f"Application: {focused.get('application', '(unknown)')}")
+        print(f"Window: {focused.get('window', '(unknown)')}")
     else:
         print("No focused element")
 
 
 def print_json(max_depth: int = 3):
-    """Print desktop state as JSON."""
-    print("=" * 70)
-    print("DESKTOP STATE (JSON)")
-    print("=" * 70)
-    print(capture.get_desktop_json(max_depth=max_depth))
+    """Write desktop state as JSON to file."""
+    output_file = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        'debug_reader_json_output.json'
+    )
+
+    json_output = capture.get_desktop_json(max_depth=max_depth)
+
+    with open(output_file, 'w') as f:
+        f.write(json_output)
+
+    print(f"Written to: {output_file}")
+    print(f"Size: {len(json_output)} bytes")
 
 
 def print_roles():
